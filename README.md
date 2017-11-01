@@ -1,4 +1,4 @@
-# JavaScript Path Query Language
+# JavaScript Path Query Language (With very less usages)
 
 Use similar grammar like XPath to query JSON object and array.
 

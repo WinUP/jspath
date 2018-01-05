@@ -1,6 +1,6 @@
 import * as _ from 'lodash';
 
-export function analyse<T>(source: any, url: string): T {
+export function analyse<T = any>(source: any, url: string): T {
     if (url == null || url == undefined || url == '' || url == '/')
         return source;
     let paths = url.split('/').reverse();
@@ -130,7 +130,16 @@ class ChildAnalysePipe implements AnalysePipe {
         if (input == null)
             throw `Cannot execute child pipe: Input is null`;
         if (input instanceof Array && _.findIndex(input, (v: any) => (v instanceof Object) && !(v instanceof Array)) > -1)
-            return input.map(v => v[this.key]);
-        return input[this.key];
+            return _.flatten(input.map(v => this.pickItem(v)));
+        let result = this.pickItem(input);
+        return result.length == 1 ? result[0] : result;
+    }
+
+    private pickItem(source: object): any[] {
+        let keys = Object.keys(source);
+        if (_.startsWith(this.key, 'reg:'))
+            return keys.filter(k => new RegExp(this.key.substring(4)).test(k)).map(k => (source as any)[k]);
+        else
+            return [(source as any)[this.key]];
     }
 }

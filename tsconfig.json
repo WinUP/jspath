@@ -6,8 +6,6 @@
         "declaration": true,
         "strict": true,
         "noImplicitReturns": true,
-        "moduleResolution": "node",
-        "experimentalDecorators": true,
-        "emitDecoratorMetadata": true
+        "moduleResolution": "node"
     }
 }

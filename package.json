@@ -1,6 +1,6 @@
 {
   "name": "jsquery",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "JavaScript Path Query Language",
   "main": "index.js",
   "scripts": {

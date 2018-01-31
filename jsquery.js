@@ -1,45 +1,65 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var _ = require("lodash");
-function analyse(source, url) {
-    if (url == null || url == undefined || url == '' || url == '/')
-        return source;
-    var paths = url.split('/').reverse();
+var PickChildrenAnalyzer_1 = require("./PickChildrenAnalyzer");
+var SliceAnalyzer_1 = require("./SliceAnalyzer");
+var AnalyzerUnit_1 = require("./AnalyzerUnit");
+var AnalyzerType_1 = require("./AnalyzerType");
+/**
+ * Analyse path
+ * @param sourcePath Path in target
+ */
+function analyse(sourcePath) {
+    if (sourcePath == null || sourcePath == undefined || sourcePath == '' || sourcePath == '/')
+        return [];
+    var paths = sourcePath.split('/').reverse();
     if (paths[paths.length - 1] == '')
         paths.pop();
-    var pipe = [];
+    var units = [];
     paths.forEach(function (path) {
-        if (typeof source != 'object' && (path != null && path != '' && path != undefined && path != '/'))
-            throw "Cannot analyse " + path + ": Source is not object or array but want to use inner path";
-        else {
-            if (_.startsWith(path, '!')) {
-                path = path.substring(1);
-                pipe.push(new ReverseAnalysePipe());
-            }
-            var arraySubpipe = [];
-            while (path.indexOf('[') > -1) {
-                if (!_.endsWith(path, ']'))
-                    throw "Cannot analyse " + path + ": Want to understand as array but found invalid characters at EOL";
-                var patterns = /(\S*?)\[([\d-:]+)\]/g.exec(path);
-                if (patterns == null)
-                    throw "Cannot analyse " + path + ": Want to understand as array but found invalid boundary";
-                var boundary = findArrayBoundary(patterns[2]);
-                arraySubpipe.push(new ArrayAnalysePipe(boundary.from, boundary.to));
-                path = path.substring(0, path.indexOf('[')) + path.substring(patterns[0].length);
-            }
-            pipe = pipe.concat(arraySubpipe.reverse());
-            if (path && path != '')
-                pipe.push(new ChildAnalysePipe(path));
+        var arraySubpipe = [];
+        while (path.indexOf('[') > -1 && path.indexOf('reg:') != 0) {
+            if (!_.endsWith(path, ']'))
+                throw TypeError("Cannot analyse " + path + ": Want to understand as array but found invalid characters at EOL");
+            var patterns = /(\S*?)\[([\d-:]+)\]/g.exec(path);
+            if (patterns == null)
+                throw "Cannot analyse " + path + ": Want to understand as array but found invalid boundary";
+            var boundary = findArrayBoundary(patterns[2]);
+            arraySubpipe.push(new AnalyzerUnit_1.AnalyzerUnit(AnalyzerType_1.AnalyzerType.Slice, new SliceAnalyzer_1.SliceAnalyzer(boundary.from, boundary.to)));
+            path = path.substring(0, path.indexOf('[')) + path.substring(patterns[0].length);
         }
+        units = units.concat(arraySubpipe.reverse());
+        if (path && path != '')
+            units.push(new AnalyzerUnit_1.AnalyzerUnit(AnalyzerType_1.AnalyzerType.PickChilren, new PickChildrenAnalyzer_1.PickChildrenAnalyzer(path)));
     });
-    var result = source;
-    while (pipe.length > 0) {
-        var target = pipe.pop();
-        result = target.parse(result);
-    }
-    return result;
+    return units.reverse();
 }
 exports.analyse = analyse;
+/**
+ * Pick item from target
+ * @param source Target
+ * @param units Path analysing result
+ */
+function pick(source, units) {
+    var result = source;
+    units.forEach(function (unit) {
+        var target;
+        if (unit.type == AnalyzerType_1.AnalyzerType.Slice) {
+            var content = unit.content;
+            target = new SliceUnit(content.from, content.to);
+        }
+        else if (unit.type == AnalyzerType_1.AnalyzerType.PickChilren) {
+            var content = unit.content;
+            target = new PickChildrenUnit(content.name);
+        }
+        else {
+            throw new TypeError("Unrecognizable analyzer unit type: " + unit.type);
+        }
+        result = target.parse(result);
+    });
+    return result;
+}
+exports.pick = pick;
 function findArrayBoundary(boundary) {
     var startPoint = 0;
     var endPoint = 0;
@@ -56,14 +76,14 @@ function findArrayBoundary(boundary) {
         startPoint = endPoint = eval(boundary);
     return { from: startPoint, to: endPoint };
 }
-var ArrayAnalysePipe = /** @class */ (function () {
-    function ArrayAnalysePipe(from, to) {
+var SliceUnit = /** @class */ (function () {
+    function SliceUnit(from, to) {
         this.from = from;
         this.to = to;
     }
-    ArrayAnalysePipe.prototype.parse = function (input) {
+    SliceUnit.prototype.parse = function (input) {
         if (!(input instanceof Array) && (typeof input != 'string'))
-            throw "Cannot execute array analyse pipe: Input is not array or string";
+            return undefined;
         if (input instanceof Array) {
             var result = this.sliceArray(input);
             if (result.length == 1)
@@ -74,7 +94,7 @@ var ArrayAnalysePipe = /** @class */ (function () {
         else
             return this.sliceString(input);
     };
-    ArrayAnalysePipe.prototype.sliceArray = function (input) {
+    SliceUnit.prototype.sliceArray = function (input) {
         var result = [];
         var i = this.from;
         while (true) {
@@ -89,7 +109,7 @@ var ArrayAnalysePipe = /** @class */ (function () {
         }
         return result;
     };
-    ArrayAnalysePipe.prototype.sliceString = function (input) {
+    SliceUnit.prototype.sliceString = function (input) {
         var result = '';
         var i = this.from;
         while (true) {
@@ -104,46 +124,25 @@ var ArrayAnalysePipe = /** @class */ (function () {
         }
         return result;
     };
-    return ArrayAnalysePipe;
+    return SliceUnit;
 }());
-var ReverseAnalysePipe = /** @class */ (function () {
-    function ReverseAnalysePipe() {
-    }
-    ReverseAnalysePipe.prototype.parse = function (input) {
-        if (input instanceof Array)
-            return this.reverseArray(input);
-        if (typeof input == 'boolean')
-            return !input;
-        throw "Cannot execute reverse pipe: " + typeof input + " is not boolean or array and cannot be reversed";
-    };
-    ReverseAnalysePipe.prototype.reverseArray = function (input) {
-        var _this = this;
-        return input.map(function (v) {
-            if (v instanceof Array)
-                return _this.reverseArray(v);
-            else if (typeof v == 'boolean')
-                return !v;
-            throw "Cannot execute reverse pipe: " + typeof v + " is not boolean or array and cannot be reversed";
-        });
-    };
-    return ReverseAnalysePipe;
-}());
-var ChildAnalysePipe = /** @class */ (function () {
-    function ChildAnalysePipe(key) {
+exports.SliceUnit = SliceUnit;
+var PickChildrenUnit = /** @class */ (function () {
+    function PickChildrenUnit(key) {
         this.key = key;
     }
-    ChildAnalysePipe.prototype.parse = function (input) {
+    PickChildrenUnit.prototype.parse = function (input) {
         var _this = this;
         if (typeof input != 'object')
-            throw "Cannot execute child pipe: Input is not object or array";
+            return undefined;
         if (input == null)
-            throw "Cannot execute child pipe: Input is null";
-        if (input instanceof Array && _.findIndex(input, function (v) { return (v instanceof Object) && !(v instanceof Array); }) > -1)
+            return undefined;
+        if (input instanceof Array && _.findIndex(input, function (v) { return (typeof v === 'object') && !(v instanceof Array); }) > -1)
             return _.flatten(input.map(function (v) { return _this.pickItem(v); }));
         var result = this.pickItem(input);
         return result.length == 1 ? result[0] : result;
     };
-    ChildAnalysePipe.prototype.pickItem = function (source) {
+    PickChildrenUnit.prototype.pickItem = function (source) {
         var _this = this;
         var keys = Object.keys(source);
         if (_.startsWith(this.key, 'reg:'))
@@ -151,6 +150,7 @@ var ChildAnalysePipe = /** @class */ (function () {
         else
             return [source[this.key]];
     };
-    return ChildAnalysePipe;
+    return PickChildrenUnit;
 }());
+exports.PickChildrenUnit = PickChildrenUnit;
 //# sourceMappingURL=jsquery.js.map

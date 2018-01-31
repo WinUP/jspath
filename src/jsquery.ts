@@ -1,40 +1,59 @@
 import * as _ from 'lodash';
 
-export function analyse<T = any>(source: any, url: string): T {
-    if (url == null || url == undefined || url == '' || url == '/')
-        return source;
-    let paths = url.split('/').reverse();
+import { PickChildrenAnalyzer } from './PickChildrenAnalyzer';
+import { SliceAnalyzer } from './SliceAnalyzer';
+import { AnalyzerUnit } from './AnalyzerUnit';
+import { AnalyzerType } from './AnalyzerType';
+
+/**
+ * Analyse path
+ * @param sourcePath Path in target
+ */
+export function analyse(sourcePath: string): AnalyzerUnit[] {
+    if (sourcePath == null || sourcePath == undefined || sourcePath == '' || sourcePath == '/')
+        return [];
+    let paths = sourcePath.split('/').reverse();
     if (paths[paths.length - 1] == '') paths.pop();
-    let pipe: AnalysePipe[] = [];
+    let units: AnalyzerUnit[] = [];
     paths.forEach(path => {
-        if (typeof source != 'object' && (path != null && path != '' && path != undefined && path != '/'))
-            throw `Cannot analyse ${path}: Source is not object or array but want to use inner path`;
-        else {
-            if (_.startsWith(path, '!')) {
-                path = path.substring(1);
-                pipe.push(new ReverseAnalysePipe());
-            }
-            let arraySubpipe: AnalysePipe[] = [];
-            while (path.indexOf('[') > -1) {
-                if (!_.endsWith(path, ']'))
-                    throw `Cannot analyse ${path}: Want to understand as array but found invalid characters at EOL`;
-                let patterns = /(\S*?)\[([\d-:]+)\]/g.exec(path);
-                if (patterns == null)
-                    throw `Cannot analyse ${path}: Want to understand as array but found invalid boundary`;
-                let boundary = findArrayBoundary(patterns[2]);
-                arraySubpipe.push(new ArrayAnalysePipe(boundary.from, boundary.to));
-                path = path.substring(0, path.indexOf('[')) + path.substring(patterns[0].length);
-            }
-            pipe = pipe.concat(arraySubpipe.reverse());
-            if (path && path != '')
-                pipe.push(new ChildAnalysePipe(path));
+        let arraySubpipe: AnalyzerUnit[] = [];
+        while (path.indexOf('[') > -1 && path.indexOf('reg:') != 0) {
+            if (!_.endsWith(path, ']'))
+                throw TypeError(`Cannot analyse ${path}: Want to understand as array but found invalid characters at EOL`);
+            let patterns = /(\S*?)\[([\d-:]+)\]/g.exec(path);
+            if (patterns == null)
+                throw `Cannot analyse ${path}: Want to understand as array but found invalid boundary`;
+            let boundary = findArrayBoundary(patterns[2]);
+            arraySubpipe.push(new AnalyzerUnit(AnalyzerType.Slice, new SliceAnalyzer(boundary.from, boundary.to)));
+            path = path.substring(0, path.indexOf('[')) + path.substring(patterns[0].length);
         }
+        units = units.concat(arraySubpipe.reverse());
+        if (path && path != '')
+            units.push(new AnalyzerUnit(AnalyzerType.PickChilren, new PickChildrenAnalyzer(path)));
     });
-    let result = source;
-    while (pipe.length > 0) {
-        let target = pipe.pop() as AnalysePipe;
+    return units.reverse();
+}
+
+/**
+ * Pick item from target
+ * @param source Target
+ * @param units Path analysing result
+ */
+export function pick<T = any, U = any>(source: T, units: AnalyzerUnit[]): U {
+    let result: U = source as any;
+    units.forEach(unit => {
+        let target: AnalysePipe;
+        if (unit.type == AnalyzerType.Slice) {
+            let content: SliceAnalyzer = unit.content as SliceAnalyzer;
+            target = new SliceUnit(content.from, content.to);
+        } else if (unit.type == AnalyzerType.PickChilren) {
+            let content: PickChildrenAnalyzer = unit.content as PickChildrenAnalyzer;
+            target = new PickChildrenUnit(content.name);
+        } else {
+            throw new TypeError(`Unrecognizable analyzer unit type: ${unit.type}`);
+        }
         result = target.parse(result);
-    }
+    });
     return result;
 }
 
@@ -54,16 +73,16 @@ function findArrayBoundary(boundary: string): { from: number, to: number } {
     return { from: startPoint, to: endPoint };
 }
 
-interface AnalysePipe {
+export interface AnalysePipe {
     parse(input: any): any;
 }
 
-class ArrayAnalysePipe implements AnalysePipe {
+export class SliceUnit implements AnalysePipe {
     public constructor(private from: number, private to: number) { }
 
     public parse(input: any): any {
         if (!(input instanceof Array) && (typeof input != 'string'))
-            throw `Cannot execute array analyse pipe: Input is not array or string`;
+            return undefined;
         if (input instanceof Array) {
             let result = this.sliceArray(input);
             if (result.length == 1)
@@ -101,35 +120,15 @@ class ArrayAnalysePipe implements AnalysePipe {
     }
 }
 
-class ReverseAnalysePipe implements AnalysePipe {
-    public parse(input: any): any {
-        if (input instanceof Array)
-           return this.reverseArray(input);
-        if (typeof input == 'boolean')
-            return !input;
-        throw `Cannot execute reverse pipe: ${typeof input} is not boolean or array and cannot be reversed`;
-    }
-
-    private reverseArray(input: Array<any>): Array<any> {
-        return input.map(v => {
-            if (v instanceof Array)
-                return this.reverseArray(v);
-            else if (typeof v == 'boolean')
-                return !v;
-            throw `Cannot execute reverse pipe: ${typeof v} is not boolean or array and cannot be reversed`;
-        });
-    }
-}
-
-class ChildAnalysePipe implements AnalysePipe {
+export class PickChildrenUnit implements AnalysePipe {
     public constructor(private key: string) { }
 
     public parse(input: any): any {
         if (typeof input != 'object')
-            throw `Cannot execute child pipe: Input is not object or array`;
+            return undefined;
         if (input == null)
-            throw `Cannot execute child pipe: Input is null`;
-        if (input instanceof Array && _.findIndex(input, (v: any) => (v instanceof Object) && !(v instanceof Array)) > -1)
+            return undefined;
+        if (input instanceof Array && _.findIndex(input, (v: any) => (typeof v === 'object') && !(v instanceof Array)) > -1)
             return _.flatten(input.map(v => this.pickItem(v)));
         let result = this.pickItem(input);
         return result.length == 1 ? result[0] : result;

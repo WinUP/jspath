@@ -1,6 +1,6 @@
 {
-  "name": "jsquery",
-  "version": "1.0.3",
+  "name": "@ekifvk/jpquery",
+  "version": "1.1.1",
   "description": "JavaScript Path Query Language",
   "main": "index.js",
   "scripts": {

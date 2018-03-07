@@ -1,13 +1,17 @@
-# JavaScript Path Query Language (With very less usages)
+# JavaScript Path Query
 
-Use similar grammar like XPath to query JSON object and array.
+Query JSON object and array.
 
-### Sample
+### Example
 
     {times:[1,2,3,{success:false},{success:true}]}
 
 Use query:
 
-    /times[-1:-2]/success -> [ true, false ]
+    /times/success -> [undefined, undefined, undefined, false, true]
 
-    /times[-1:-2]/!success/[0] -> false
+    /times[-1 -> -2]/success -> [ true, false ]
+
+    /times[1 -> last] -> [2, 3, {success:false}, {success:true}] // const last = (array | string).length - 1
+
+    /times[-1 -> -last - 1] -> [{success:true}, {success:false}, 3, 2, 1]

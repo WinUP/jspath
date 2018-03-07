@@ -1,1 +1,1 @@
-export interface AnalyzerContent {}
+export interface AnalyzerContent { }

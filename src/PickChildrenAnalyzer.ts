@@ -1,4 +1,4 @@
-import { AnalyzerContent } from "./AnalyzerContent";
+import { AnalyzerContent } from './AnalyzerContent';
 
 export interface PickChildrenAnalyzer extends AnalyzerContent {
     name: string;

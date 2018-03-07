@@ -1,5 +1,5 @@
-import { AnalyzerContent } from "./AnalyzerContent";
-import { AnalyzerType } from "./AnalyzerType";
+import { AnalyzerContent } from './AnalyzerContent';
+import { AnalyzerType } from './AnalyzerType';
 
 export interface AnalyzerUnit {
     type: AnalyzerType;
